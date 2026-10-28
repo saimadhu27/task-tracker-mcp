@@ -48,7 +48,13 @@
 #     tasks[task_id]["status"] = "completed"
 #     return tasks[task_id]
 
+import logging
+import sys
+
 from task_tracker.tools import mcp
+
+logging.basicConfig(level=logging.INFO, stream=sys.stderr)
+logger = logging.getLogger(__name__)
 
 if __name__ == "__main__":
     mcp.run(transport="stdio")
