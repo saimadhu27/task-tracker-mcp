@@ -12,3 +12,12 @@ dependencies = [
     "sqlalchemy>=2.1.6",
     "tzdata>=2026.5",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
