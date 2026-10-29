@@ -49,13 +49,25 @@
 #     return tasks[task_id]
 
 import logging
-import sys
 
+from task_tracker import health  # noqa: F401  (importing registers /health and /ready)
+from task_tracker.config import settings
+from task_tracker.logging_config import configure_logging
 from task_tracker.tools import mcp
 
-logging.basicConfig(level=logging.INFO, stream=sys.stderr)
-logger = logging.getLogger(__name__)
+configure_logging()
+logger = logging.getLogger("task_tracker")
 
 if __name__ == "__main__":
-    mcp.run(transport="stdio")
+    if settings.server_transport == "streamable-http":
+        logger.info(
+            "Starting HTTP server on %s:%s", settings.server_host, settings.server_port
+        )
+        mcp.run(
+            transport="streamable-http",
+            host=settings.server_host,
+            port=settings.server_port,
+        )
+    else:
+        mcp.run(transport="stdio")
     

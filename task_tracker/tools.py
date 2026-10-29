@@ -2,6 +2,7 @@ from contextlib import contextmanager
 from typing import Literal
 from datetime import date
 import logging
+import time
 
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
@@ -20,15 +21,31 @@ mcp = MCPServer(
 )
 
 @contextmanager
-def _translate_errors():
-    """ Turn our own errors into messages the model can read and react to."""
+def _tool_call(name: str):
+    """Translate errors for the model and log one structured line per call.
+
+    Arguments are deliberately not logged: they contain user data.
+    """
+    start = time.perf_counter()
+    outcome = "ok"
     try:
         yield
     except DomainError as exc:
+        outcome = "rejected"
         raise ToolError(str(exc)) from exc
     except Exception as exc:
-        logger.exception("Unexpected error in a tool call")
+        outcome = "error"
+        logger.exception("Unexpected error in tool call", extra={"tool": name})
         raise ToolError("Something went wrong on the server. Please try again.") from exc
+    finally:
+        duration_ms = (time.perf_counter() - start) * 1000
+        logger.info(
+            "tool=%s outcome=%s duration_ms=%.1f",
+            name,
+            outcome,
+            duration_ms,
+            extra={"tool": name, "outcome": outcome, "duration_ms": round(duration_ms, 1)},
+        )
 
 def _format_tasks(tasks: list[TaskOut]) -> str:
     if not tasks:
@@ -53,7 +70,7 @@ def create_task(
     priority is low, medium (default) or high. due_date is an ISO date like 2026-11-05
     and cannot be in the past.
     """
-    with _translate_errors():
+    with _tool_call("create_task"):
         return service.create_task(get_current_user_id(), title, priority, due_date)
 
 
@@ -66,7 +83,7 @@ def list_tasks(
 
     Filter by status ('open', 'done' or 'all') and/or by priority.
     """
-    with _translate_errors():
+    with _tool_call("list_tasks"):
         return service.list_tasks(get_current_user_id(), status, priority)
 
 
@@ -83,7 +100,7 @@ def update_task(
     Set clear_due_date to true to remove the due date. Use list_tasks first if you
     don't know the id.
     """
-    with _translate_errors():
+    with _tool_call("update_task"):
         return service.update_task(
             get_current_user_id(), task_id, title, priority, due_date, clear_due_date
         )
@@ -92,7 +109,7 @@ def update_task(
 @mcp.tool()
 def complete_task(task_id: int) -> TaskOut:
     """Mark a task as done, given its numeric id. Use list_tasks first if you don't know the id."""
-    with _translate_errors():
+    with _tool_call("complete_task"):
         return service.complete_task(get_current_user_id(), task_id)
 
 
