@@ -1,5 +1,6 @@
 import os
 
+os.environ["AUTH_MODE"] = "none"
 # Point the app at the TEST database before anything from task_tracker is imported.
 # Settings are read at import time, and environment variables beat the .env file.
 os.environ["DATABASE_URL"] = os.environ.get(

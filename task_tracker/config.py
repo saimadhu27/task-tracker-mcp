@@ -16,5 +16,10 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_format: Literal["text", "json"] = "text"
     
+    # "none" = local development (stdio, or HTTP on loopback only). "api_key" = every
+    # HTTP request must carry a valid API key.
+    auth_mode: Literal["none", "api_key"] = "none"
+    public_base_url: str = "http://127.0.0.1:8000"
+    
 settings = Settings()
 

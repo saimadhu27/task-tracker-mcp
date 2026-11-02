@@ -4,21 +4,39 @@ from datetime import date
 import logging
 import time
 
+from mcp.server.auth.settings import AuthSettings
+from pydantic import AnyHttpUrl
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
 from task_tracker.errors import DomainError
 from task_tracker.schemas import TaskOut, Priority
 from task_tracker import service
-from task_tracker.auth import get_current_user_id
+from task_tracker.auth import SCOPE, ApiKeyVerifier, resource_url, get_current_user_id
+from task_tracker.config import settings
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-mcp = MCPServer(
-    "task-tracker",
-    instructions="Manage a to-do list: create, list and complete tasks."
-)
+def _build_server() -> MCPServer:
+    instructions = "Manage a to-do list with priorities and due dates."
+    if settings.auth_mode == "api_key":
+        return MCPServer(
+            "task-tracker",
+            instructions=instructions,
+            token_verifier=ApiKeyVerifier(),
+            auth=AuthSettings(
+                # Placeholder: the SDK requires an issuer, but API-key mode has no
+                # OAuth server. Real OAuth replaces this in Part C.
+                issuer_url=AnyHttpUrl(settings.public_base_url),
+                resource_server_url=AnyHttpUrl(resource_url()),
+                required_scopes=[SCOPE],
+            ),
+        )
+    return MCPServer("task-tracker", instructions=instructions)
+
+
+mcp = _build_server()
 
 @contextmanager
 def _tool_call(name: str):

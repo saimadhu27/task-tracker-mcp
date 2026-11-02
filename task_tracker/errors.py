@@ -7,3 +7,6 @@ class InvalidInput(DomainError):
 class TaskNotFound(DomainError):
     def __init__(self, task_id: int) -> None:
         super().__init__(f"No task found with id {task_id}.")
+        
+class AuthenticationRequired(DomainError):
+    pass
