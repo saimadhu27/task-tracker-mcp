@@ -9,11 +9,12 @@ from pydantic import AnyHttpUrl
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
-from task_tracker.errors import DomainError
+from task_tracker.errors import DomainError, RateLimited
 from task_tracker.schemas import TaskOut, Priority
 from task_tracker import service
 from task_tracker.auth import SCOPE, ApiKeyVerifier, resource_url, get_current_user_id
 from task_tracker.config import settings
+from task_tracker import rate_limit
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -40,29 +41,44 @@ mcp = _build_server()
 
 @contextmanager
 def _tool_call(name: str):
-    """Translate errors for the model and log one structured line per call.
+    """Identify the caller, apply the rate limit, translate errors for the model, and log
+    one structured line per call. Yields the caller's user id.
 
     Arguments are deliberately not logged: they contain user data.
     """
     start = time.perf_counter()
     outcome = "ok"
+    user_id: int | None = None
     try:
-        yield
+        user_id = get_current_user_id()
+        rate_limit.enforce(user_id)
+        yield user_id
+    except RateLimited as exc:
+        outcome = "rate_limited"
+        raise ToolError(str(exc)) from exc
     except DomainError as exc:
         outcome = "rejected"
         raise ToolError(str(exc)) from exc
     except Exception as exc:
         outcome = "error"
-        logger.exception("Unexpected error in tool call", extra={"tool": name})
+        logger.exception(
+            "Unexpected error in tool call", extra={"tool": name, "user_id": user_id}
+        )
         raise ToolError("Something went wrong on the server. Please try again.") from exc
     finally:
         duration_ms = (time.perf_counter() - start) * 1000
         logger.info(
-            "tool=%s outcome=%s duration_ms=%.1f",
+            "tool=%s user=%s outcome=%s duration_ms=%.1f",
             name,
+            user_id,
             outcome,
             duration_ms,
-            extra={"tool": name, "outcome": outcome, "duration_ms": round(duration_ms, 1)},
+            extra={
+                "tool": name,
+                "user_id": user_id,
+                "outcome": outcome,
+                "duration_ms": round(duration_ms, 1),
+            },
         )
 
 def _format_tasks(tasks: list[TaskOut]) -> str:
@@ -88,8 +104,8 @@ def create_task(
     priority is low, medium (default) or high. due_date is an ISO date like 2026-11-05
     and cannot be in the past.
     """
-    with _tool_call("create_task"):
-        return service.create_task(get_current_user_id(), title, priority, due_date)
+    with _tool_call("create_task") as user_id:
+        return service.create_task(user_id, title, priority, due_date)
 
 
 @mcp.tool()
@@ -101,8 +117,8 @@ def list_tasks(
 
     Filter by status ('open', 'done' or 'all') and/or by priority.
     """
-    with _tool_call("list_tasks"):
-        return service.list_tasks(get_current_user_id(), status, priority)
+    with _tool_call("list_tasks") as user_id:
+        return service.list_tasks(user_id, status, priority)
 
 
 @mcp.tool()
@@ -118,17 +134,17 @@ def update_task(
     Set clear_due_date to true to remove the due date. Use list_tasks first if you
     don't know the id.
     """
-    with _tool_call("update_task"):
+    with _tool_call("update_task") as user_id:
         return service.update_task(
-            get_current_user_id(), task_id, title, priority, due_date, clear_due_date
+            user_id, task_id, title, priority, due_date, clear_due_date
         )
 
 
 @mcp.tool()
 def complete_task(task_id: int) -> TaskOut:
     """Mark a task as done, given its numeric id. Use list_tasks first if you don't know the id."""
-    with _tool_call("complete_task"):
-        return service.complete_task(get_current_user_id(), task_id)
+    with _tool_call("complete_task") as user_id:
+        return service.complete_task(user_id, task_id)
 
 
 # ---- Resource: read-only context an app can load ----

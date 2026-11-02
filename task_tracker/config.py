@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     # HTTP request must carry a valid API key.
     auth_mode: Literal["none", "api_key"] = "none"
     public_base_url: str = "http://127.0.0.1:8000"
+    rate_limit_per_minute: int = 60
     
 settings = Settings()
 

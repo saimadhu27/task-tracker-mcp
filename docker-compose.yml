@@ -3,6 +3,7 @@ x-app-environment: &app-environment
   APP_TIMEZONE: ${APP_TIMEZONE:-America/Los_Angeles}
   DEV_USER_EMAIL: ${DEV_USER_EMAIL:-dev@example.com}
   LOG_FORMAT: json
+  RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-60}
 
 services:
   db:
