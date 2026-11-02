@@ -3,6 +3,7 @@ x-app-environment: &app-environment
   APP_TIMEZONE: ${APP_TIMEZONE:-America/Los_Angeles}
   DEV_USER_EMAIL: ${DEV_USER_EMAIL:-dev@example.com}
   LOG_FORMAT: json
+  RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-60}
 
 services:
   db:
@@ -42,6 +43,8 @@ services:
       SERVER_TRANSPORT: streamable-http
       SERVER_HOST: 0.0.0.0
       SERVER_PORT: "8000"
+      AUTH_MODE: api_key
+      PUBLIC_BASE_URL: http://127.0.0.1:8000
     depends_on:
       db:
         condition: service_healthy

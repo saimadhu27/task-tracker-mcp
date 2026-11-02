@@ -58,10 +58,20 @@ from task_tracker.tools import mcp
 configure_logging()
 logger = logging.getLogger("task_tracker")
 
+LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
+
 if __name__ == "__main__":
     if settings.server_transport == "streamable-http":
+        if settings.auth_mode == "none" and settings.server_host not in LOOPBACK_HOSTS:
+            raise SystemExit(
+                f"Refusing to listen on {settings.server_host} without authentication. "
+                "Set AUTH_MODE=api_key, or bind to 127.0.0.1."
+            )
         logger.info(
-            "Starting HTTP server on %s:%s", settings.server_host, settings.server_port
+            "Starting HTTP server on %s:%s (auth: %s)",
+            settings.server_host,
+            settings.server_port,
+            settings.auth_mode,
         )
         mcp.run(
             transport="streamable-http",
@@ -70,4 +80,3 @@ if __name__ == "__main__":
         )
     else:
         mcp.run(transport="stdio")
-    

@@ -1,8 +1,8 @@
-from datetime import date
+from datetime import date, datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from task_tracker.models import Task, User
+from task_tracker.models import Task, User, ApiKey
 
 def get_user_by_email(session: Session, email:str) -> User | None:
     """Get a user by email."""
@@ -34,3 +34,21 @@ def list_tasks(session: Session, user_id: int, status: str | None = None, priori
         stmt = stmt.where(Task.priority == priority)
     # Soonest due date first; tasks with no due date go last.
     return list(session.scalars(stmt.order_by(Task.due_date.asc().nulls_last(), Task.id)))
+
+def add_api_key(session: Session, user_id: int, name: str, key_hash: str) -> ApiKey:
+    row = ApiKey(user_id=user_id, name=name, key_hash=key_hash)
+    session.add(row)
+    session.flush()
+    return row
+
+def get_active_api_key(session: Session, key_hash: str) -> ApiKey | None:
+    return session.scalar(
+        select(ApiKey).where(ApiKey.key_hash == key_hash, ApiKey.revoked_at.is_(None))
+    )
+    
+def revoke_api_key(session: Session, key_id: int) -> bool:
+    key = session.get(ApiKey, key_id)
+    if key is None or key.revoked_at is not None:
+        return False
+    key.revoked_at = datetime.now(timezone.utc)
+    return True
