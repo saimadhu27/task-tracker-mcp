@@ -11,7 +11,7 @@ permissions:
 # A new push to the same branch cancels the run that is still going.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   test:
@@ -68,3 +68,71 @@ jobs:
             echo "A .env file is tracked by git. Remove it and rotate any secrets in it."
             exit 1
           fi
+
+  deploy:
+    name: deploy
+    needs: [test, docker, hygiene]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      AWS_PAGER: ""
+      PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
+      ECR_REPOSITORY: task-tracker-mcp
+      ECS_CLUSTER: default
+      ECS_SERVICE: task-tracker
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sign in to AWS (no stored keys)
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Build and push the image
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          REGISTRY="$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
+          aws ecr get-login-password | docker login --username AWS --password-stdin "$REGISTRY"
+          IMAGE="$REGISTRY/$ECR_REPOSITORY:$GITHUB_SHA"
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+          echo "ACCOUNT_ID=$ACCOUNT_ID" >> "$GITHUB_ENV"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+
+      - name: Run database migrations (one-off task with the new image)
+        run: RUN_IMAGE="$IMAGE" bash scripts/ecs-run.sh alembic upgrade head
+
+      - name: Update the service
+        run: |
+          SERVICE_ARN=$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" \
+            --query 'services[0].serviceArn' --output text)
+          bash scripts/render-container.sh > /tmp/primary.json
+          aws ecs update-express-gateway-service --service-arn "$SERVICE_ARN" \
+            --primary-container file:///tmp/primary.json
+
+      - name: Wait for the rollout, then check the new image is live
+        run: |
+          sleep 30
+          aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE"
+          TD=$(aws ecs describe-express-gateway-service \
+            --service-arn "$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" --query 'services[0].serviceArn' --output text)" \
+            --query 'service.activeConfigurations[0].taskDefinitionArn' --output text)
+          live=$(aws ecs describe-task-definition --task-definition "$TD" \
+            --query 'taskDefinition.containerDefinitions[0].image' --output text)
+          if [ "$live" != "$IMAGE" ]; then
+            echo "The service is running $live, not $IMAGE. The deployment may have rolled back." >&2
+            exit 1
+          fi
+
+      - name: Smoke test
+        run: |
+          curl -fsS --retry 10 --retry-delay 6 --retry-connrefused "$PUBLIC_BASE_URL/health"
+          curl -fsS --retry 10 --retry-delay 6 --retry-connrefused "$PUBLIC_BASE_URL/ready"
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$PUBLIC_BASE_URL/mcp" \
+            -H 'content-type: application/json' -d '{}')
+          test "$code" = "401"
