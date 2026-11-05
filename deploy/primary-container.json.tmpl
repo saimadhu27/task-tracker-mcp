@@ -1,0 +1,21 @@
+{
+  "image": "__IMAGE__",
+  "containerPort": 8000,
+  "environment": [
+    {"name": "AUTH_MODE", "value": "api_key"},
+    {"name": "SERVER_TRANSPORT", "value": "streamable-http"},
+    {"name": "SERVER_HOST", "value": "0.0.0.0"},
+    {"name": "SERVER_PORT", "value": "8000"},
+    {"name": "LOG_FORMAT", "value": "json"},
+    {"name": "APP_TIMEZONE", "value": "America/Los_Angeles"},
+    {"name": "RATE_LIMIT_PER_MINUTE", "value": "60"},
+    {"name": "PUBLIC_BASE_URL", "value": "__PUBLIC_BASE_URL__"},
+    {"name": "FORWARDED_ALLOW_IPS", "value": "*"}
+  ],
+  "secrets": [
+    {
+      "name": "DATABASE_URL",
+      "valueFrom": "arn:aws:ssm:__AWS_REGION__:__ACCOUNT_ID__:parameter/task-tracker/DATABASE_URL"
+    }
+  ]
+}
